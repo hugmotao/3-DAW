@@ -4,7 +4,6 @@ if (!is_dir($dir)) {
     mkdir($dir);
 }
 
-// Adicionar disciplina
 if (isset($_POST['adicionar'])) {
     $nome = trim($_POST['nome']);
     if ($nome !== '') {
@@ -17,7 +16,6 @@ if (isset($_POST['adicionar'])) {
     }
 }
 
-// Editar disciplina
 if (isset($_POST['editar'])) {
     $id = $_POST['id'];
     $novo_nome = trim($_POST['novo_nome']);
@@ -31,7 +29,6 @@ if (isset($_POST['editar'])) {
     }
 }
 
-// Excluir disciplina
 if (isset($_POST['excluir'])) {
     $id = $_POST['id'];
     $caminho = "$dir/$id.txt";
@@ -40,7 +37,6 @@ if (isset($_POST['excluir'])) {
     }
 }
 
-// Listar disciplinas
 $disciplinas = [];
 foreach (glob("$dir/*.txt") as $arquivo) {
     $id = basename($arquivo, '.txt');

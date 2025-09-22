@@ -2,11 +2,17 @@
 $alunos = [];
 $mensagem = '';
 
-// ...existing code...
+    // ...existing code...
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $matricula = trim($_POST['matricula'] ?? '');
-    $nome = trim($_POST['nome'] ?? '');
-    $email = trim($_POST['email'] ?? '');
+    $matricula = $_POST['matricula'] ?? '';
+    while (substr($matricula, 0, 1) === ' ') $matricula = substr($matricula, 1);
+    while (substr($matricula, -1) === ' ') $matricula = substr($matricula, 0, -1);
+    $nome = $_POST['nome'] ?? '';
+    while (substr($nome, 0, 1) === ' ') $nome = substr($nome, 1);
+    while (substr($nome, -1) === ' ') $nome = substr($nome, 0, -1);
+    $email = $_POST['email'] ?? '';
+    while (substr($email, 0, 1) === ' ') $email = substr($email, 1);
+    while (substr($email, -1) === ' ') $email = substr($email, 0, -1);
     $regex_email = '/^[\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,}$/';
 
     if ($matricula === '' || $nome === '' || $email === '') {
@@ -15,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mensagem = 'Email inválido!';
     } else {
     // ...existing code...
-        $linha = "{$matricula};{$nome};{$email}\n";
+$linha = "{$matricula};{$nome};{$email}\n";
         file_put_contents($arquivo, $linha, FILE_APPEND);
         $mensagem = 'Aluno registrado com sucesso!';
     // ...existing code...
@@ -29,7 +35,8 @@ if (file_exists($arquivo)) {
     if ($handle) {
         $i = 0;
         while (($linha = fgets($handle)) !== false) {
-            $linha = trim($linha);
+            while (substr($linha, 0, 1) === ' ') $linha = substr($linha, 1);
+            while (substr($linha, -1) === ' ') $linha = substr($linha, 0, -1);
             if ($i == 0 || $linha === '') { $i++; continue; }
             list($matricula, $nome, $email) = explode(';', $linha);
             $alunos[] = [

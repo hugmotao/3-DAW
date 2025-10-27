@@ -1,129 +1,152 @@
-<?php
-$mensagem = '';
-$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+                        <?php
+        $mensagem = '';
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['acao']) && $_GET['acao'] === 'buscar' && isset($_GET['codigo'])) {
-    $arquivo = __DIR__ . '/perguntas.txt';
-    $codigo = $_GET['codigo'];
-    $pergunta = null;
+        // Database config from environment (no fallback to file)
+        $dbHost = getenv('DB_HOST') ?: 'localhost';
+        $dbUser = getenv('DB_USER') ?: 'root';
+        $dbPass = getenv('DB_PASS') ?: '';
+        $dbName = getenv('DB_DATABASE') ?: '';
 
-    if (file_exists($arquivo)) {
-        $linhas = file($arquivo, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($linhas as $linha) {
-            $dados = explode(';', $linha);
-            if ($dados[0] === $codigo) {
-                $pergunta = ['codigo' => $dados[0], 'tipo' => $dados[1], 'enunciado' => $dados[2]];
-                if ($dados[1] === 'MULTIPLA') {
-                    $pergunta['opcoes'] = explode('|', $dados[3]);
-                    $pergunta['correta'] = $dados[4];
-                } else {
-                    $pergunta['resposta'] = $dados[3];
-                }
-                break;
-            }
+        function send_json($data, $status = 200) {
+            header('Content-Type: application/json');
+            http_response_code($status);
+            echo json_encode($data);
+            exit;
         }
-    }
 
-    header('Content-Type: application/json');
-    if ($pergunta) {
-        echo json_encode($pergunta);
-    } else {
-        http_response_code(404);
-        echo json_encode(['error' => 'Pergunta não encontrada.']);
-    }
-    exit;
-}
+        if ($dbName === '') {
+            send_json(['error' => 'Database not configured. Set DB_DATABASE environment variable.'], 500);
+        }
 
+        $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+        if ($conn->connect_error) {
+            send_json(['error' => 'Database connection failed: ' . $conn->connect_error], 500);
+        }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $arquivo = __DIR__ . '/perguntas.txt';
-    $acao = $_POST['acao'] ?? 'cadastrar';
+        // Enforce POST-only: all actions (listar, buscar, cadastrar, alterar, deletar) are handled via POST only
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            send_json(['error' => 'Este endpoint aceita apenas requisições POST.'], 405);
+        }
 
-    if ($acao === 'alterar') {
-        $codigo = $_POST['codigo'] ?? '';
-        $enunciado = $_POST['enunciado'] ?? '';
-        $tipo = $_POST['tipo'] ?? '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $acao = $_POST['acao'] ?? 'cadastrar';
 
-        if (!$codigo || !$enunciado || !$tipo) {
-            $mensagem = 'Dados insuficientes para alterar a pergunta.';
-        } else {
-            $linhas = file($arquivo, FILE_IGNORE_NEW_LINES);
-            $encontrado = false;
-            foreach ($linhas as $i => $linha) {
-                if (strpos($linha, $codigo . ';') === 0) {
+            if ($acao === 'cadastrar') {
+                $tipo = $_POST['tipo'] ?? '';
+                $enunciado = trim($_POST['enunciado'] ?? '');
+                if ($tipo === 'MULTIPLA') {
+                    $opcoes = [trim($_POST['opcao1'] ?? ''), trim($_POST['opcao2'] ?? ''), trim($_POST['opcao3'] ?? ''), trim($_POST['opcao4'] ?? '')];
+                    $correta = $_POST['correta'] ?? '';
+                    if ($enunciado && $correta !== '' && !in_array('', $opcoes)) {
+                        $codigo = uniqid('pm_');
+                        $opcoes_str = implode('|', $opcoes);
+                        $stmt = $conn->prepare('INSERT INTO Perguntas (codigo, tipo, enunciado, opcoes, correta) VALUES (?, ?, ?, ?, ?)');
+                        if ($stmt) {
+                            $stmt->bind_param('sssss', $codigo, $tipo, $enunciado, $opcoes_str, $correta);
+                            if ($stmt->execute()) {
+                                $mensagem = 'Pergunta de múltipla escolha cadastrada!';
+                            } else {
+                                $mensagem = 'Erro ao salvar no banco: ' . $stmt->error;
+                            }
+                            $stmt->close();
+                        } else {
+                            $mensagem = 'Erro ao preparar instrução no banco.';
+                        }
+                    } else {
+                        $mensagem = 'Preencha todos os campos da pergunta de múltipla escolha.';
+                    }
+                } elseif ($tipo === 'TEXTO') {
+                    $resposta = trim($_POST['resposta'] ?? '');
+                    if ($enunciado && $resposta) {
+                        $codigo = uniqid('pt_');
+                        $stmt = $conn->prepare('INSERT INTO Perguntas (codigo, tipo, enunciado, resposta) VALUES (?, ?, ?, ?)');
+                        if ($stmt) {
+                            $stmt->bind_param('ssss', $codigo, $tipo, $enunciado, $resposta);
+                            if ($stmt->execute()) {
+                                $mensagem = 'Pergunta de texto cadastrada!';
+                            } else {
+                                $mensagem = 'Erro ao salvar no banco: ' . $stmt->error;
+                            }
+                            $stmt->close();
+                        } else {
+                            $mensagem = 'Erro ao preparar instrução no banco.';
+                        }
+                    } else {
+                        $mensagem = 'Preencha todos os campos da pergunta de texto.';
+                    }
+                } else {
+                    $mensagem = 'Tipo de pergunta inválido.';
+                }
+            } elseif ($acao === 'alterar') {
+                $codigo = $_POST['codigo'] ?? '';
+                $tipo = $_POST['tipo'] ?? '';
+                $enunciado = $_POST['enunciado'] ?? '';
+                if (!$codigo || !$tipo || !$enunciado) {
+                    $mensagem = 'Dados insuficientes para alterar a pergunta.';
+                } else {
                     if ($tipo === 'MULTIPLA') {
-                        $opcoes = [
-                            $_POST['opcao1'] ?? '', $_POST['opcao2'] ?? '',
-                            $_POST['opcao3'] ?? '', $_POST['opcao4'] ?? ''
-                        ];
+                        $opcoes = [trim($_POST['opcao1'] ?? ''), trim($_POST['opcao2'] ?? ''), trim($_POST['opcao3'] ?? ''), trim($_POST['opcao4'] ?? '')];
                         $correta = $_POST['correta'] ?? '';
-                        $linhas[$i] = $codigo . ';MULTIPLA;' . $enunciado . ';' . implode('|', $opcoes) . ';' . $correta;
+                        $opcoes_str = implode('|', $opcoes);
+                        $stmt = $conn->prepare('UPDATE Perguntas SET tipo=?, enunciado=?, opcoes=?, correta=?, resposta=NULL WHERE codigo=?');
+                        if ($stmt) {
+                            $stmt->bind_param('sssss', $tipo, $enunciado, $opcoes_str, $correta, $codigo);
+                            if ($stmt->execute()) {
+                                $mensagem = 'Pergunta alterada com sucesso!';
+                            } else {
+                                $mensagem = 'Erro ao alterar no banco: ' . $stmt->error;
+                            }
+                            $stmt->close();
+                        } else {
+                            $mensagem = 'Erro ao preparar instrução de alteração.';
+                        }
                     } else {
                         $resposta = $_POST['resposta'] ?? '';
-                        $linhas[$i] = $codigo . ';TEXTO;' . $enunciado . ';' . $resposta;
+                        $stmt = $conn->prepare('UPDATE Perguntas SET tipo=?, enunciado=?, resposta=?, opcoes=NULL, correta=NULL WHERE codigo=?');
+                        if ($stmt) {
+                            $stmt->bind_param('ssss', $tipo, $enunciado, $resposta, $codigo);
+                            if ($stmt->execute()) {
+                                $mensagem = 'Pergunta alterada com sucesso!';
+                            } else {
+                                $mensagem = 'Erro ao alterar no banco: ' . $stmt->error;
+                            }
+                            $stmt->close();
+                        } else {
+                            $mensagem = 'Erro ao preparar instrução de alteração.';
+                        }
                     }
-                    $encontrado = true;
-                    break;
+                }
+            } elseif ($acao === 'deletar') {
+                $codigo = $_POST['codigo'] ?? '';
+                if (!$codigo) {
+                    $mensagem = 'Código não informado para exclusão.';
+                } else {
+                    $stmt = $conn->prepare('DELETE FROM Perguntas WHERE codigo = ?');
+                    if ($stmt) {
+                        $stmt->bind_param('s', $codigo);
+                        if ($stmt->execute()) {
+                            if ($stmt->affected_rows > 0) {
+                                $mensagem = 'Pergunta removida com sucesso!';
+                            } else {
+                                $mensagem = 'Pergunta não encontrada para remoção.';
+                            }
+                        } else {
+                            $mensagem = 'Erro ao excluir no banco: ' . $stmt->error;
+                        }
+                        $stmt->close();
+                    } else {
+                        $mensagem = 'Erro ao preparar instrução de exclusão.';
+                    }
                 }
             }
 
-            if ($encontrado) {
-                file_put_contents($arquivo, implode("\n", $linhas) . "\n");
-                $mensagem = 'Pergunta alterada com sucesso!';
+            if ($isAjax) {
+                send_json(['message' => $mensagem]);
             } else {
-                $mensagem = 'Erro: Pergunta não encontrada para alteração.';
+                echo $mensagem;
             }
         }
-    } else {
-        $tipo = $_POST['tipo'] ?? '';
-        $enunciado = $_POST['enunciado'] ?? '';
-        while (substr($enunciado, 0, 1) === ' ') $enunciado = substr($enunciado, 1);
-        while (substr($enunciado, -1) === ' ') $enunciado = substr($enunciado, 0, -1);
-        if ($tipo === 'MULTIPLA') {
-            $opcoes = [
-                (function($v){while(substr($v,0,1)===' ')$v=substr($v,1);while(substr($v,-1)===' ')$v=substr($v,0,-1);return $v;})(($_POST['opcao1'] ?? '')),
-                (function($v){while(substr($v,0,1)===' ')$v=substr($v,1);while(substr($v,-1)===' ')$v=substr($v,0,-1);return $v;})(($_POST['opcao2'] ?? '')),
-                (function($v){while(substr($v,0,1)===' ')$v=substr($v,1);while(substr($v,-1)===' ')$v=substr($v,0,-1);return $v;})(($_POST['opcao3'] ?? '')),
-                (function($v){while(substr($v,0,1)===' ')$v=substr($v,1);while(substr($v,-1)===' ')$v=substr($v,0,-1);return $v;})(($_POST['opcao4'] ?? ''))
-            ];
-            $correta = $_POST['correta'] ?? '';
-            if ($enunciado && $correta !== '' && !in_array('', $opcoes)) {
-                $id = uniqid('pm_');
-                $linha = $id . ';MULTIPLA;' . $enunciado . ';' . implode('|', $opcoes) . ';' . $correta . "\n";
-                $fp = fopen($arquivo, 'a');
-                if ($fp) {
-                    fwrite($fp, $linha);
-                    fclose($fp);
-                    $mensagem = 'Pergunta de múltipla escolha cadastrada!';
-                } else {
-                    $mensagem = 'Erro ao salvar a pergunta. Verifique permissões do arquivo.';
-                }
-            } else {
-                $mensagem = 'Preencha todos os campos da pergunta de múltipla escolha.';
-            }
-        } elseif ($tipo === 'TEXTO') {
-        $resposta = $_POST['resposta'] ?? '';
-        while (substr($resposta, 0, 1) === ' ') $resposta = substr($resposta, 1);
-        while (substr($resposta, -1) === ' ') $resposta = substr($resposta, 0, -1);
-            if ($enunciado && $resposta) {
-                $id = uniqid('pt_');
-                $linha = $id . ';TEXTO;' . $enunciado . ';' . $resposta . "\n";
-                $fp = fopen($arquivo, 'a');
-                if ($fp) {
-                    fwrite($fp, $linha);
-                    fclose($fp);
-                    $mensagem = 'Pergunta de texto cadastrada!';
-                } else {
-                    $mensagem = 'Erro ao salvar a pergunta. Verifique permissões do arquivo.';
-                }
-            } else {
-                $mensagem = 'Preencha todos os campos da pergunta de texto.';
-            }
-        }
-    }
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isAjax) {
-    header('Content-Type: application/json');
-    echo json_encode(['message'=>$mensagem]);
-    exit;
-}
+
+        $conn->close();
+

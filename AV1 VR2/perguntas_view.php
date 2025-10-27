@@ -1,4 +1,4 @@
-    <?php require_once 'perguntas_controller.php'; ?>
+    <!-- View only: controller is called via AJAX POST requests -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -12,19 +12,24 @@
     </style>
 </head>
 <body>
-    <nav>
-        <a href="listar_perguntas_av1.php">Listar Perguntas</a>
-    </nav>
+    <!-- Navigation removed to avoid GET endpoints; use the tabs below to navigate -->
     <div id="msg"></div>
 
     <div class="tabs">
         <button onclick="openTab(event, 'cadastrar')" class="active">Cadastrar Pergunta</button>
         <button onclick="openTab(event, 'alterar')">Alterar Pergunta</button>
+        <button onclick="openTab(event, 'listar')">Listar Perguntas</button>
+    </div>
+
+    <div id="listar" class="tab-content">
+        <h2>Lista de Perguntas</h2>
+        <button id="refresh-list">Atualizar Lista</button>
+        <div id="lista_conteudo" style="margin-top:10px;"></div>
     </div>
 
     <div id="cadastrar" class="tab-content active">
         <h2>Cadastrar Pergunta</h2>
-        <form id="form-cadastrar" method="post" action="perguntas_controller.php">
+            <form id="form-cadastrar" method="post" action="perguntas_controller.php">
             <input type="hidden" name="acao" value="cadastrar">
             <label>Tipo:
                 <select name="tipo" class="tipo-select">
@@ -111,6 +116,9 @@
             document.getElementById(tabName).style.display = "block";
             evt.currentTarget.className += " active";
             document.getElementById('msg').innerHTML = '';
+            if (tabName === 'listar') {
+                loadList();
+            }
         }
 
         function configurarCamposDinamicos(form) {
@@ -140,6 +148,63 @@
             var msgDiv = document.getElementById('msg');
             var controllerUrl = 'perguntas_controller.php';
 
+            function buildTable(lista) {
+                var html = '<table border="1" cellpadding="6"><tr><th>Código</th><th>Tipo</th><th>Enunciado</th><th>Ações</th></tr>';
+                lista.forEach(function(item) {
+                    html += '<tr>';
+                    html += '<td>' + (item.codigo || '') + '</td>';
+                    html += '<td>' + (item.tipo || '') + '</td>';
+                    html += '<td>' + (item.enunciado || '') + '</td>';
+                    html += '<td>' +
+                        '<button class="btn-edit" data-codigo="' + item.codigo + '">Editar</button> ' +
+                        '<button class="btn-delete" data-codigo="' + item.codigo + '">Excluir</button>' +
+                        '</td>';
+                    html += '</tr>';
+                });
+                html += '</table>';
+                return html;
+            }
+
+            function loadList() {
+                var target = document.getElementById('lista_conteudo');
+                target.innerHTML = 'Carregando...';
+                    var fdList = new FormData(); fdList.append('acao','listar');
+                    fetch(controllerUrl, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fdList })
+                    .then(function(r){ return r.json(); })
+                .then(function(list){
+                    target.innerHTML = buildTable(list);
+                    // attach handlers
+                    document.querySelectorAll('.btn-delete').forEach(function(b){
+                        b.addEventListener('click', function(){
+                            var codigo = this.getAttribute('data-codigo');
+                            if (!confirm('Confirma exclusão da pergunta ' + codigo + '?')) return;
+                            var fd = new FormData(); fd.append('acao','deletar'); fd.append('codigo', codigo);
+                            fetch(controllerUrl, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd })
+                            .then(function(r){ return r.json(); })
+                            .then(function(j){
+                                msgDiv.innerHTML = '<p style="color:green;"><b>' + (j.message || '') + '</b></p>';
+                                loadList();
+                            })
+                            .catch(function(){ msgDiv.innerHTML = '<p style="color:red;"><b>Erro ao excluir.</b></p>'; });
+                        });
+                    });
+                    document.querySelectorAll('.btn-edit').forEach(function(b){
+                        b.addEventListener('click', function(){
+                            var codigo = this.getAttribute('data-codigo');
+                            // switch to alterar tab and populate
+                            var alterarBtn = document.querySelector('.tabs button[onclick*="alterar"]');
+                            if (alterarBtn) alterarBtn.click();
+                            document.getElementById('codigo_pergunta').value = codigo;
+                            document.getElementById('form-buscar').dispatchEvent(new Event('submit'));
+                        });
+                    });
+                })
+                .catch(function(){ target.innerHTML = '<p style="color:red;">Erro ao carregar lista.</p>'; });
+            }
+
+            var refreshBtn = document.getElementById('refresh-list');
+            if (refreshBtn) refreshBtn.addEventListener('click', loadList);
+
             document.getElementById('form-cadastrar').addEventListener('submit', function(e) {
                 e.preventDefault();
                 var form = this;
@@ -159,7 +224,8 @@
                 var codigo = document.getElementById('codigo_pergunta').value;
                 var formAlterar = document.getElementById('form-alterar');
                 
-                fetch(controllerUrl + '?acao=buscar&codigo=' + encodeURIComponent(codigo))
+                var fdBuscar = new FormData(); fdBuscar.append('acao','buscar'); fdBuscar.append('codigo', codigo);
+                fetch(controllerUrl, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fdBuscar })
                 .then(function(response) {
                     if (!response.ok) {
                         throw new Error('Pergunta não encontrada');

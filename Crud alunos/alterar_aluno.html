@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alterar Aluno</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h2>Alterar Dados do Aluno</h2>
+    <?php
+    include 'conexao.php';
+    
+    if (isset($_GET['id'])) {
+        $id = $_GET['id'];
+        $sql = "SELECT * FROM alunos WHERE id = $id";
+        $resultado = mysqli_query($conexao, $sql);
+        
+        if ($row = mysqli_fetch_assoc($resultado)) {
+            ?>
+            <form action="alterar_aluno.php" method="POST">
+                <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                
+                <label for="nome">Nome:</label><br>
+                <input type="text" id="nome" name="nome" value="<?php echo $row['nome']; ?>" required><br>
+                
+                <label for="matricula">Matrícula:</label><br>
+                <input type="text" id="matricula" name="matricula" value="<?php echo $row['matricula']; ?>" required><br>
+                
+                <label for="email">Email:</label><br>
+                <input type="email" id="email" name="email" value="<?php echo $row['email']; ?>" required><br><br>
+                
+                <input type="submit" value="Alterar Aluno">
+            </form>
+            <?php
+        }
+        mysqli_close($conexao);
+    }
+    ?>
+    <br>
+    <a href="listar_alunos.php">Voltar para Lista</a>
+</body>
+</html>
